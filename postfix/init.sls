@@ -1,4 +1,6 @@
 {% from "postfix/map.jinja" import postfix with context %}
+include:
+  - postfix.config
 
 postfix:
   pkg.installed:
