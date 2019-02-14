@@ -1,20 +1,45 @@
 postfix:
   manage_master_config: True
   master_config:
+    enable_dovecot: False
+    # The following are the default values:
+    dovecot:
+      user: vmail
+      group: vmail
+      flags: DRhu
+      argv: "/usr/lib/dovecot/deliver -d ${recipient}"
+
     enable_submission: False
+    # To replace the defaults use this:
+    submission:
+      smtpd_tls_security_level: encrypt
+      smtpd_sasl_auth_enable: yes
+      smtpd_client_restrictions: permit_sasl_authenticated,reject
 
-  virtual:
-    groupaliasexample: 
-     - someuser_1@example.com
-     - someuser_2@example.com
-    singlealiasexample: 'someuser_3@example.com'
+    # Alternative way of managing services allowing for much more finegrained
+    # control over each service. See postfix/services.jinja for details.
+    services:
+      smtp:
+        # Limit to no more than 10 smtp processes
+        maxproc: 10
+      # Enable oldstyle TLS wrapped SMTP
+      smtps:
+        enable: True
+      submission:
+        enable: True
+        args:
+          - "-o smtpd_tls_security_level=encrypt"
+          - "-o smtpd_sasl_auth_enable=yes"
+          - "-o smtpd_client_restrictions: permit_sasl_authenticated,reject"
+      tlsproxy:
+        enable: True
+        chroot: True
 
-  sender_canonical:
-    root: 'servers@example.com'
-    nagios: 'alerts@example.com'
+  enable_service: True
 
   postgrey:
     enabled: True
+    enable_service: True
     location: inet:172.16.0.5:6379
 
   policyd-spf:
@@ -23,21 +48,11 @@ postfix:
 
   config:
     smtpd_banner: $myhostname ESMTP $mail_name
+    smtp_tls_CApath: /etc/ssl/certs
     biff: 'no'
-
     append_dot_mydomain: 'no'
-
     readme_directory: 'no'
-
-    smtpd_tls_cert_file: /etc/ssl/certs/ssl-cert-snakeoil.pem
-    smtpd_tls_key_file: /etc/ssl/private/ssl-cert-snakeoil.key
-    smtpd_use_tls: 'yes'
-    smtpd_tls_session_cache_database: btree:${data_directory}/smtpd_scache
-    smtp_tls_session_cache_database: btree:${data_directory}/smtp_scache
-
     myhostname: localhost
-    alias_maps: hash:/etc/aliases
-    alias_database: hash:/etc/aliases
     mydestination: localhost, localhost.localdomain
     relayhost: 
     mynetworks: 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128
@@ -45,3 +60,145 @@ postfix:
     recipient_delimiter: +
     inet_interfaces: all
 
+    #postsrsd:
+    sender_canonical_maps: tcp:127.0.0.1:10001
+    sender_canonical_classes: envelope_sender
+    recipient_canonical_maps: tcp:127.0.0.1:10002
+    recipient_canonical_classes: envelope_recipient
+
+    # Alias
+    alias_maps: hash:/etc/aliases
+    # This is the list of files for the newaliases
+    # cmd to process (see postconf(5) for details).
+    # Only local hash/btree/dbm files:
+    alias_database: hash:/etc/aliases
+
+    # Virtual users
+    virtual_alias_maps: proxy:mysql:/etc/postfix/virtual_alias_maps.cf
+    virtual_mailbox_domains: proxy:mysql:/etc/postfix/virtual_mailbox_domains.cf
+    virtual_mailbox_maps: proxy:mysql:/etc/postfix/virtual_mailbox_maps.cf
+    virtual_mailbox_base: /home/vmail
+    virtual_mailbox_limit: 512000000
+    virtual_minimum_uid: 5000
+    virtual_transport: virtual
+    virtual_uid_maps: static:5000
+    virtual_gid_maps: static:5000
+
+    local_transport: virtual
+    local_recipient_maps: $virtual_mailbox_maps
+    transport_maps: hash:/etc/postfix/transport
+
+    # SMTP server
+    smtpd_tls_session_cache_database: btree:${data_directory}/smtpd_scache
+    smtpd_use_tls: 'yes'
+    smtpd_sasl_auth_enable: 'yes'
+    smtpd_sasl_type: dovecot
+    smtpd_sasl_path: /var/run/dovecot/auth-client
+    smtpd_recipient_restrictions: permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination
+    smtpd_relay_restrictions: permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination
+    smtpd_sasl_security_options: noanonymous
+    smtpd_sasl_tls_security_options: $smtpd_sasl_security_options
+    smtpd_tls_auth_only: 'yes'
+    smtpd_sasl_local_domain: $mydomain
+    smtpd_tls_loglevel: 1
+    smtpd_tls_session_cache_timeout: 3600s
+
+    relay_domains: '$mydestination'
+
+    # SMTP server certificate and key (from pillar data)
+    smtpd_tls_cert_file: /etc/postfix/ssl/server-cert.crt
+    smtpd_tls_key_file: /etc/postfix/ssl/server-cert.key
+
+    # SMTP client
+    smtp_tls_session_cache_database: btree:${data_directory}/smtp_scache
+    smtp_use_tls: 'yes'
+    smtp_tls_cert_file: /etc/postfix/ssl/example.com-relay-client-cert.crt
+    smtp_tls_key_file: /etc/postfix/ssl/example.com-relay-client-cert.key
+
+    smtp_sasl_password_maps: hash:/etc/postfix/sasl_passwd
+    sender_canonical_maps: hash:/etc/postfix/sender_canonical
+    relay_recipient_maps: hash:/etc/postfix/relay_domains
+    virtual_alias_maps: hash:/etc/postfix/virtual
+
+  transport:
+    DOMAIN_NAME: ':[IP_ADDRESS]'
+
+  vmail:
+    user: postfix_user
+    password: DB_PASSWD
+    hosts: DB_HOST
+    dbname: postfix_db
+
+  # add mysql query to virtual
+  mysql:
+    virtual_mailbox_domains:
+      table: virtual_domains
+      select_field: 1
+      where_field: name
+    virtual_alias_maps:
+      table: virtual_aliases
+      select_field: destination
+      where_field: email
+    virtual_mailbox_maps:
+      table: virtual_users
+      select_field: 1
+      where_field: email
+
+  aliases:
+    # manage single aliases
+    # this uses the aliases file defined in the minion config, /etc/aliases by default
+    use_file: false
+    present:
+      root: info@example.com
+    absent:
+      - root
+
+    # manage entire aliases file
+    use_file: true
+    content: |
+      # Forward all local *nix users mail to our admins (via greedy regexp)
+      /.+/    admins@example.com
+
+  certificates:
+    server-cert:
+      public_cert: |
+        -----BEGIN CERTIFICATE-----
+        (Your primary SSL certificate: smtp.example.com.crt)
+        -----END CERTIFICATE-----
+        -----BEGIN CERTIFICATE-----
+        (Your intermediate certificate: example-ca.crt)
+        -----END CERTIFICATE-----
+        -----BEGIN CERTIFICATE-----
+        (Your root certificate: trusted-root.crt)
+        -----END CERTIFICATE-----
+      private_key: |
+        -----BEGIN RSA PRIVATE KEY-----
+        (Your Private key)
+        -----END RSA PRIVATE KEY-----
+
+    example.com-relay-client-cert:
+      public_cert: |
+        -----BEGIN CERTIFICATE-----
+        (Your primary SSL certificate: smtp.example.com.crt)
+        -----END CERTIFICATE-----
+      private_key: |
+        -----BEGIN RSA PRIVATE KEY-----
+        (Your Private key)
+        -----END RSA PRIVATE KEY-----
+
+  mapping:
+    smtp_sasl_password_maps:
+      - smtp.example.com: myaccount:somepassword
+
+    sender_canonical_maps:
+      - root: servers@example.com
+      - nagios: alerts@example.com
+
+    relay_recipient_maps:
+      - example.com: OK
+
+    virtual_alias_maps:
+      - groupaliasexample:
+        - someuser_1@example.com
+        - someuser_2@example.com
+      - singlealiasexample: someuser_3@example.com
