@@ -7,7 +7,7 @@ postgrey:
       - service: postgrey
 
   service.running:
-    - enable: {{ salt['pillar.get']('postfix:postgrey:enable_service', True) }}
+    - enable: True
     - require:
       - pkg: postgrey
     - watch:

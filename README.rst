@@ -23,30 +23,4 @@ Installs and starts postfix SMTP server
 ``postfix.config``
 ------------------
 
-Manages postfix main.cf and optionally the master.cf configuration file
-
-``postfix.policyd-spf``
-------------------
-
-Installs and configures policyd-spf
-
-``postfix.postgrey``
-------------------
-
-Installs and starts Postgrey service
-
-``postfix.mysql``
-------------------
-
-Installs postfix mysql package ( Debian only)
-
-``postfix.pcre``
-------------------
-
-Installs postfix pcre package ( Debian only)
-
-
-``postfix.postsrsd``
-------------------
-
-Installs postfix postsrsd package
+Manages postfix main.cf configuration file
