@@ -10,6 +10,7 @@ include:
     - file_mode: 644
     - makedirs: True
 
+{% if salt['pillar.get']('postfix:manage_main_config', True) %}
 {{ postfix.config_path }}/main.cf:
   file.managed:
     - source: salt://postfix/files/main.cf
@@ -21,6 +22,7 @@ include:
     - watch_in:
       - service: postfix
     - template: jinja
+{% endif %}
 
 {% if 'vmail' in pillar.get('postfix', '') %}
 {{ postfix.config_path }}/virtual_alias_maps.cf:
